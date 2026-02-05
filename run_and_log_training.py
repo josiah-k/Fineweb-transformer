@@ -8,7 +8,7 @@ MAIN = __name__ == "__main__"
 
 if MAIN:
     ## ----- training settings ----- ##
-    batch_size = float(sys.argv[1])
+    batch_size = int(sys.argv[1])
     learning_rate = float(sys.argv[2])
     # batch_size = 64
     # learning_rate = 1e-4
