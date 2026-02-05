@@ -8,13 +8,13 @@ MAIN = __name__ == "__main__"
 
 if MAIN:
     ## ----- training settings ----- ##
-    # batch_size = float(sys.argv[1])
-    # learning_rate = float(sys.argv[2])
-    batch_size = 64
-    learning_rate = 1e-4
+    batch_size = float(sys.argv[1])
+    learning_rate = float(sys.argv[2])
+    # batch_size = 64
+    # learning_rate = 1e-4
 
     max_seq_len = 512
-    n_epochs = 2
+    n_epochs = 20
     build_vocab = True
 
 
@@ -40,7 +40,7 @@ if MAIN:
                     "hidden_dim": hidden_dim}
 
     wandb.login(key="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")
-    wandb.init(project="fineweb-transformer-test",
+    wandb.init(project="fineweb-transformer",
                dir=folder_name,
                name=str(trial_name),
                config=wandb_config,

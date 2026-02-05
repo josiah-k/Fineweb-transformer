@@ -31,12 +31,12 @@ class Train_Transformer():
                                 max_len=max_seq_len,
                                 vocab_size=vocab_size)
 
-    def make_and_save_vocab(self, tokenizer_path="project/fineweb_bytebpe",
+    def make_and_save_vocab(self, tokenizer_path="fineweb_bytebpe",
                              max_docs=5_000, min_frequency=2):
 
         make_vocab(tokenizer_path, max_docs, self.vocab_size, min_frequency)
 
-    def initialize_tokenizer(self, tokenizer_path="project/fineweb_bytebpe"):
+    def initialize_tokenizer(self, tokenizer_path="fineweb_bytebpe"):
 
         token_dir = Path(tokenizer_path)
         vocab = token_dir / "vocab.json"
@@ -49,7 +49,7 @@ class Train_Transformer():
     def train(self, learning_rate: float,
               n_epochs: int,
               batch_size: int,
-              model_dir="project/model"):
+              model_dir="model"):
 
         # Initialize dataloader
         training_data = load_dataset(
