@@ -12,9 +12,7 @@ import wandb
 
 """
 Todo:
-- separate codebase into difference files
-    - make model class with train func
-        - add load prev model func etc
+- add load prev model funcs etc
 """
 
 
@@ -94,9 +92,6 @@ class Train_Transformer():
                 ce_loss.backward()
 
                 optimizer.step()
-
-                """remove break when done"""
-                break
 
             train_loss.append(losses)
             self.transformer_model.eval()

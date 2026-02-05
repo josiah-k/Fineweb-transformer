@@ -4,10 +4,9 @@ import math
 
 """
 Todo:
-- add training vs inference differences
-    - inference:
-        - set up KV cache properly per layer
-        - add casual mask just for initial prompt, remove otherwise
+- add code for inference mode
+    - set up KV cache properly per layer
+    - add casual mask just for initial prompt, remove otherwise
 - add scalable softmax (look at paper)
 """
 
