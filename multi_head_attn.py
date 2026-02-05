@@ -7,6 +7,7 @@ Todo:
 - add code for inference mode
     - set up KV cache properly per layer
     - add casual mask just for initial prompt, remove otherwise
+- enable GPU use
 - add scalable softmax (look at paper)
 """
 

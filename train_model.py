@@ -58,6 +58,7 @@ class Train_Transformer():
             split="train",
             streaming=True
         )
+        training_data = training_data.take(2560) # just loading a small subset for demonstration
         training_data = training_data.shuffle(buffer_size=2_000)
         training_data = training_data.map(partial(tokenize, tokenizer=self.tok))
 
