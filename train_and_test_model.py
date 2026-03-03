@@ -12,7 +12,9 @@ import wandb
 
 """
 Todo:
+- save metadata (n_heads, n_layers, etc)
 - add load prev model funcs etc
+- separate out initialization of training data
 """
 
 
@@ -62,13 +64,12 @@ class Train_Transformer():
         training_data = training_data.shuffle(buffer_size=2_000)
         training_data = training_data.map(partial(tokenize, tokenizer=self.tok))
 
-        model_dir = Path(model_dir)
-        model_dir.mkdir(exist_ok=True)
-
         train_dataloader = DataLoader(
             training_data, batch_size=batch_size,
             collate_fn=partial(collate_fn, pad_id=self.pad_id))
 
+        model_dir = Path(model_dir)
+        model_dir.mkdir(exist_ok=True)
 
         optimizer = torch.optim.Adam(self.transformer_model.parameters(), lr=learning_rate)
         loss_fn = nn.CrossEntropyLoss(ignore_index=self.pad_id)
@@ -81,7 +82,7 @@ class Train_Transformer():
             for data in train_dataloader:
                 src, tgt, mask = data['input_ids'], data['output_ids'], data['pad_mask']
 
-                logits = self.transformer_model(src, pad_mask=mask)
+                logits = self.transformer_model(src, pad_mask=mask) # (B, T, vocab_size)
 
                 optimizer.zero_grad()
 
@@ -109,6 +110,59 @@ class Train_Transformer():
             wandb.log({
                 "loss":losses
             })
+
+
+    def run_inference(self, batch_size: int,
+                      max_gen_len: int=300,
+                      model_dir="model",
+                      load_model: bool=False,
+                      epoch_num: str=None):
+
+        # Initialize dataloader
+        test_data = load_dataset(
+            "HuggingFaceFW/fineweb-edu",
+            name="default",
+            split="train",
+            streaming=True
+        )
+        test_data = test_data.take(batch_size) # just loading a small subset for demonstration
+        test_data = test_data.map(partial(tokenize, tokenizer=self.tok))
+
+        test_dataloader = DataLoader(
+            test_data, batch_size=batch_size,
+            collate_fn=partial(collate_fn, pad_id=self.pad_id))
+
+        if load_model:
+            model_dir = Path(model_dir)
+            model_path = model_dir / epoch_num
+            all_data = torch.load(model_path)
+            self.transformer_model.load_state_dict(
+                all_data['model_state_dict']
+            )
+        self.transformer_model.eval()
+
+        for prompt in test_dataloader:
+            src, mask = prompt['input_ids'], prompt['pad_mask']
+        trunc_ind = self.max_seq_len - max_gen_len
+        src_prompt, mask_prompt = src[:,:trunc_ind], mask[:,:trunc_ind] # truncating so can test
+
+        self.stop_id = self.tok.token_to_id("</s>")
+        """confirm this is actually stop token"""
+
+        for _ in range(max_gen_len):
+            logits = self.transformer_model(src_prompt, pad_mask=mask_prompt) # (B, T, vocab_size)
+            probs = torch.softmax(logits[:,-1], dim=-1)
+            next_tkn = torch.multinomial(probs, num_samples=1)
+
+            src_prompt = torch.cat((src_prompt,next_tkn), dim=-1)
+            mask_prompt = torch.cat((mask_prompt,torch.ones((2,1))), dim=-1)
+            """redo so that uses KV cache"""
+
+        """may need to clear output after stop token"""
+        # src_seq = [seq[seq != stop_id/pad_id].tolist() for seq in src] # to clear unwanted ouput tokens
+        decoded_src = self.tok.decode_batch(src.tolist())
+        decoded_gen = self.tok.decode_batch(src_prompt.tolist())
+        return decoded_src, decoded_gen
 
 
 

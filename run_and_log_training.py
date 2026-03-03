@@ -2,7 +2,7 @@ import os
 import sys
 import wandb
 
-from train_model import Train_Transformer
+from train_and_test_model import Train_Transformer
 
 MAIN = __name__ == "__main__"
 
