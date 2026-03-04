@@ -140,7 +140,7 @@ class Train_Transformer():
             mask = torch.ones_like(tkns)
             logits, kv_cache = self.transformer_model(tkns, mask, kv_cache) # (B, len(tkns), vocab_size)
             if greedy:
-                next_tkn = torch.argmax(logits, dim=-1).unsqueeze(-1)
+                next_tkn = torch.argmax(logits[:,-1], dim=-1).unsqueeze(-1)
             else:
                 probs = torch.softmax(logits[:,-1], dim=-1)
                 next_tkn = torch.multinomial(probs, num_samples=1)
@@ -159,7 +159,7 @@ class Train_Transformer():
 
             src_prompt_test = torch.cat((src_prompt_test,next_tkn), dim=-1)
 
-        print(torch.eq(src_prompt,src_prompt_test))
+        print('fraction of identical tokens: ', torch.mean(torch.eq(src_prompt,src_prompt_test).float(), dim=-1))
         """may need to clear output after stop token"""
         # src_seq = [seq[seq != stop_id/pad_id].tolist() for seq in src] # to clear unwanted ouput tokens
         decoded_src = self.tok.decode_batch(src.tolist())
