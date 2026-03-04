@@ -39,14 +39,14 @@ if MAIN:
                     "n_layers": n_layers,
                     "hidden_dim": hidden_dim}
 
-    wandb.login(key="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")
+    wandb.login(key=key)
     wandb.init(project="fineweb-transformer",
                dir=folder_name,
                name=str(trial_name),
                config=wandb_config,
                settings=wandb.Settings(symlink=False))
 
-    model = Train_Transformer(n_heads, n_layers, hidden_dim, max_seq_len, vocab_size)
+    model = Train_Transformer(load_model=False, config=wandb_config)
     if build_vocab:
         model.make_and_save_vocab()
     model.initialize_tokenizer()
