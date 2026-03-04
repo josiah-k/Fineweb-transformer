@@ -29,7 +29,7 @@ class Train_Transformer():
                  model_dir: str="model",
                  epoch_num: int=None):
         if load_model:
-            model_state = load_model_data(model_dir, epoch_num)
+            config, model_state = load_model_data(model_dir, epoch_num)
         else:
             model_state = None
         self.initialize_model(config, model_state)
