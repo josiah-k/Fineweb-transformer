@@ -4,9 +4,6 @@ import math
 
 """
 Todo:
-- add code for inference mode
-    - set up KV cache properly per layer
-    - make sure masking is done properly
 - enable GPU use
 - add scalable softmax (look at paper)
 """
@@ -45,7 +42,7 @@ class Attn_head(nn.Module):
 
         scores = Q @ K.transpose(-2,-1) / math.sqrt(self.head_dim)
 
-        attn_mat = self.compute_masked_attn(scores, pad_mask)
+        attn_mat = self.compute_masked_attn(scores, pad_mask, kv_cache)
 
         output = attn_mat @ V
         # concatenate heads back together
@@ -54,22 +51,26 @@ class Attn_head(nn.Module):
 
         return output, (K_cache, V_cache)
 
-    def compute_masked_attn(self, scores: torch.tensor, pad_mask: torch.tensor):
+    def compute_masked_attn(self, scores: torch.tensor, pad_mask: torch.tensor, kv_cache: torch.tensor):
         """
         pad_mask assumes 1 == include, 0 == mask
         """
         pad_mask = pad_mask.unsqueeze(1).expand(-1,pad_mask.shape[1],-1) # expand to match shape of causal mask
         pad_mask = pad_mask.unsqueeze(1).expand(-1,self.num_heads,-1,-1)
 
+        if kv_cache is not None:
+            causal_mask = torch.ones_like(scores) # when doing inference do not use causal mask
+        else:
+            # causal_mask = torch.triu(torch.ones_like(scores), diagonal=1)
+            causal_mask = torch.tril(torch.ones_like(scores))
+        # 1 == include, 0 == mask
+        mask = 1 - (1 - pad_mask)*(1 - causal_mask) # OR logic
+
         if self.similarity == 'softmax':
-            causal_mask = torch.triu(torch.ones_like(scores), diagonal=1)
-            pad_mask = 1 - pad_mask
-            mask = (causal_mask + pad_mask)*-1e6
+            mask = (1 - mask)*-1e6
             attn_mat = torch.softmax(scores + mask, -1)
 
         elif self.similarity == 'linear':
-            causal_mask = torch.tril(torch.ones_like(scores))
-            mask = causal_mask + pad_mask
             attn_mat = scores * mask / (scores * mask).sum(-1, keepdim=True)
 
         return attn_mat
@@ -80,30 +81,26 @@ class Multi_head_attn(nn.Module):
         super().__init__()
 
         self.n_heads = n_heads
-        self.Wo = nn.Parameter(torch.randn(hidden_dim, hidden_dim))
+        self.Wo = nn.Linear(hidden_dim, hidden_dim)
         self.attn_heads = Attn_head(hidden_dim, n_heads, head_dim, similarity=similarity)
 
     def forward(self, x: torch.tensor, kv_cache: torch.tensor, pad_mask: torch.tensor):
-        heads_out, _ = self.attn_heads(x, kv_cache, pad_mask)
-        output = heads_out @ self.Wo
-        """
-        currently kv_cache is returned but not used, need to set up inference mode correctly
-        """
+        heads_out, kv_cache = self.attn_heads(x, kv_cache, pad_mask)
+        output = self.Wo(heads_out)
 
-        return output
+        return output, kv_cache
 
 
 class FFN(nn.Module):
     def __init__(self, hidden_dim: int):
         super().__init__()
 
-        self.W1, self.W2 = nn.Parameter(torch.randn(hidden_dim, hidden_dim)), nn.Parameter(torch.randn(hidden_dim, hidden_dim))
-        self.b1, self.b2 = nn.Parameter(torch.randn(hidden_dim)), nn.Parameter(torch.randn(hidden_dim))
+        self.W1, self.W2 = nn.Linear(hidden_dim, hidden_dim), nn.Linear(hidden_dim, hidden_dim)
         self.relu = nn.ReLU()
 
     def forward(self, x: torch.tensor):
-        x = self.relu(x @ self.W1 + self.b1)
-        x = x @ self.W2 + self.b2
+        x = self.relu(self.W1(x))
+        x = self.W2(x)
         return x
 
 
@@ -131,17 +128,15 @@ class Transformer_layer(nn.Module):
         self.ffn = FFN(hidden_dim)
         self.layer_norm = nn.LayerNorm(hidden_dim)
 
-    def forward(self, data: dict):
-        x, kv_cache, pad_mask = data['x'], data['kv_cache'], data['pad_mask']
+    def forward(self, x: torch.tensor, pad_mask: torch.tensor, kv_cache: list):
 
-        x = x + self.multi_head_attn(x, kv_cache, pad_mask)
+        x_attn, kv_cache = self.multi_head_attn(x, kv_cache, pad_mask)
+        x = x + x_attn
         x = self.layer_norm(x)
         x = x + self.ffn(x)
         x = self.layer_norm(x)
 
-        return {'x': x,
-                'kv_cache': kv_cache,
-                'pad_mask': pad_mask}
+        return x, kv_cache
 
 
 class Transformer(nn.Module):
@@ -155,20 +150,21 @@ class Transformer(nn.Module):
 
         self.embedding = nn.Embedding(vocab_size, hidden_dim)
         self.pos_embed = Pos_embed(hidden_dim, max_len)
-        self.transformer = nn.Sequential(*[Transformer_layer(n_heads, hidden_dim, similarity) for _ in range(n_layers)])
-        self.W_decode = nn.Parameter(torch.randn(hidden_dim, vocab_size)) # assuming output of (seq_len, hidden_dim)
+        self.transformer = nn.ModuleList([Transformer_layer(n_heads, hidden_dim, similarity) for _ in range(n_layers)])
+        self.W_decode = nn.Linear(hidden_dim, vocab_size) # assuming output of (seq_len, hidden_dim)
 
-    def forward(self, x: torch.tensor, pad_mask: torch.tensor, kv_cache = None):
+    def forward(self, x: torch.tensor, pad_mask: torch.tensor, kv_cache: list):
+        """kv_cache expects either list of tuples or None"""
 
         x = self.embedding(x)
         x = self.pos_embed(x)
 
-        data = {'x': x,
-                'kv_cache': kv_cache,
-                'pad_mask': pad_mask}
-        data = self.transformer(data)
-        x = data['x']
+        kv_cache_new = []
+        for i, transformer in enumerate(self.transformer):
+            kv = kv_cache[i] if kv_cache is not None else kv_cache
+            x, kv = transformer(x, pad_mask, kv)
+            kv_cache_new.append(kv)
 
-        logits = x @ self.W_decode
+        logits = self.W_decode(x)
 
-        return logits
+        return logits, kv_cache_new
